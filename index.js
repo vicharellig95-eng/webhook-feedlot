@@ -13,6 +13,7 @@ const OPENAI_API_KEY   = process.env.OPENAI_API_KEY;
 // Para agregar un número nuevo, añadilo a esta lista
 const NUMEROS_PERMITIDOS = [
   "5493462652871",   // Gastón (tuyo)
+  "5493584249235",   // Número autorizado 2
   // Agregá más números acá:
   // "549XXXXXXXXXX",
 ];
