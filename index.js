@@ -8,7 +8,20 @@ const WA_TOKEN         = process.env.WA_TOKEN;
 const PHONE_NUMBER_ID  = process.env.PHONE_NUMBER_ID;
 const OPENAI_API_KEY   = process.env.OPENAI_API_KEY;
 
-// ── VERIFICACIÓN DEL WEBHOOK (Meta lo llama una vez al configurar) ──
+// ── LISTA BLANCA DE NÚMEROS AUTORIZADOS ───────────────────────
+// Formato: código de país + número sin espacios ni "+"
+// Para agregar un número nuevo, añadilo a esta lista
+const NUMEROS_PERMITIDOS = [
+  "5493462652871",   // Gastón (tuyo)
+  // Agregá más números acá:
+  // "549XXXXXXXXXX",
+];
+
+function estaAutorizado(numero) {
+  return NUMEROS_PERMITIDOS.includes(numero);
+}
+
+// ── VERIFICACIÓN DEL WEBHOOK ───────────────────────────────────
 app.get("/webhook", (req, res) => {
   const mode      = req.query["hub.mode"];
   const token     = req.query["hub.verify_token"];
@@ -23,7 +36,7 @@ app.get("/webhook", (req, res) => {
 
 // ── RECIBIR MENSAJES DE WHATSAPP ───────────────────────────────
 app.post("/webhook", async (req, res) => {
-  res.sendStatus(200); // Responder rápido a Meta
+  res.sendStatus(200);
 
   try {
     const entry   = req.body?.entry?.[0];
@@ -33,10 +46,16 @@ app.post("/webhook", async (req, res) => {
 
     if (!message) return;
 
-    const from = message.from; // número del usuario
+    const from = message.from;
     const type = message.type;
 
     console.log(`Mensaje de ${from} — tipo: ${type}`);
+
+    // ── CONTROL DE ACCESO ──────────────────────────────────────
+    if (!estaAutorizado(from)) {
+      console.log(`Número no autorizado: ${from} — ignorado`);
+      return; // Silencio total, no responde nada
+    }
 
     if (type === "text") {
       const texto = message.text.body.trim();
@@ -73,7 +92,6 @@ async function manejarTexto(from, texto) {
     return;
   }
 
-  // Diagnóstico por texto libre con OpenAI
   await enviarMensaje(from, "🤔 Analizando... un momento.");
 
   const respuesta = await llamarOpenAI([
@@ -82,13 +100,10 @@ async function manejarTexto(from, texto) {
       content: `Sos un veterinario especialista en feedlots argentinos. 
 El usuario te va a dar datos de un corral por WhatsApp. 
 Respondé con un diagnóstico conciso y recomendaciones prácticas.
-Usá formato simple para WhatsApp (sin markdown complejo, solo *negrita* para títulos).
+Usá formato simple para WhatsApp (solo *negrita* para títulos).
 Máximo 300 palabras.`
     },
-    {
-      role: "user",
-      content: texto
-    }
+    { role: "user", content: texto }
   ]);
 
   await enviarMensaje(from, respuesta);
@@ -98,14 +113,12 @@ Máximo 300 palabras.`
 async function manejarImagen(from, imageId, caption) {
   await enviarMensaje(from, "📸 Recibí la foto, analizando...");
 
-  // 1. Obtener URL de la imagen desde Meta
-  const mediaRes = await fetch(`https://graph.facebook.com/v23.0/${imageId}`, {
+  const mediaRes  = await fetch(`https://graph.facebook.com/v23.0/${imageId}`, {
     headers: { Authorization: `Bearer ${WA_TOKEN}` }
   });
   const mediaData = await mediaRes.json();
   const imageUrl  = mediaData.url;
 
-  // 2. Descargar la imagen
   const imgRes    = await fetch(imageUrl, {
     headers: { Authorization: `Bearer ${WA_TOKEN}` }
   });
@@ -113,26 +126,17 @@ async function manejarImagen(from, imageId, caption) {
   const base64    = Buffer.from(imgBuffer).toString("base64");
   const mimeType  = imgRes.headers.get("content-type") || "image/jpeg";
 
-  // 3. Analizar con OpenAI Vision
   const respuesta = await llamarOpenAIVision(base64, mimeType, caption);
-
   await enviarMensaje(from, `💩 *Análisis de bosta:*\n\n${respuesta}`);
 }
 
 // ── LLAMAR A OPENAI (texto) ────────────────────────────────────
 async function llamarOpenAI(messages) {
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res  = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model:      "gpt-4o-mini",
-        max_tokens: 500,
-        messages
-      })
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 500, messages })
     });
     const data = await res.json();
     return data.choices?.[0]?.message?.content || "No pude generar una respuesta.";
@@ -145,14 +149,11 @@ async function llamarOpenAI(messages) {
 // ── LLAMAR A OPENAI VISION (imagen) ───────────────────────────
 async function llamarOpenAIVision(base64, mimeType, caption) {
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res  = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model:      "gpt-4o-mini",
+        model: "gpt-4o-mini",
         max_tokens: 400,
         messages: [
           {
@@ -166,14 +167,8 @@ Máximo 200 palabras.`
           {
             role: "user",
             content: [
-              {
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${base64}` }
-              },
-              {
-                type: "text",
-                text: caption ? `Contexto adicional: ${caption}` : "Analizá esta bosta de feedlot."
-              }
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+              { type: "text", text: caption ? `Contexto: ${caption}` : "Analizá esta bosta de feedlot." }
             ]
           }
         ]
@@ -192,13 +187,10 @@ async function enviarMensaje(to, texto) {
   try {
     await fetch(`https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages`, {
       method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Authorization": `Bearer ${WA_TOKEN}`
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${WA_TOKEN}` },
       body: JSON.stringify({
         messaging_product: "whatsapp",
-        recipient_type:    "individual",
+        recipient_type: "individual",
         to,
         type: "text",
         text: { body: texto }
