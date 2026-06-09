@@ -5,11 +5,8 @@ app.use(express.json());
 // ─── Variables de entorno ───────────────────────────────────────────────────
 const VERIFY_TOKEN    = process.env.VERIFY_TOKEN    || "feedlot2024";
 const WA_TOKEN        = process.env.WA_TOKEN;
-// ⚠️  IMPORTANTE: debe ser el Phone Number ID (ej: 1096020733600269)
-// NO el WABA ID (26600419606325955)
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const ANTHROPIC_KEY   = process.env.ANTHROPIC_KEY;   // Claude
-const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;  // OpenAI Vision (imágenes)
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WA_VERSION      = "v19.0";
 
 // ─── Números autorizados ────────────────────────────────────────────────────
@@ -97,19 +94,10 @@ async function manejarTexto(from, texto) {
 
   await enviarMensaje(from, "🔍 Analizando datos del corral...");
 
-  const respuesta = await llamarClaude([
-    {
-      role: "user",
-      content: texto
-    }
-  ],
-    `Sos un veterinario especialista en feedlots argentinos con amplia experiencia en corrales de engorde.
-El usuario te envía datos de un corral por WhatsApp.
-Respondé con un diagnóstico conciso y recomendaciones prácticas y concretas.
-Usá formato simple para WhatsApp: *negrita* solo para títulos clave.
-Máximo 300 palabras. No uses markdown complejo, solo asteriscos para negrita.
-Si faltan datos importantes, indicá cuáles necesitás.`
-  );
+  const respuesta = await llamarOpenAI([
+    { role: "system", content: `Sos un veterinario especialista en feedlots argentinos con amplia experiencia en corrales de engorde. El usuario te envía datos de un corral por WhatsApp. Respondé con un diagnóstico conciso y recomendaciones prácticas y concretas. Usá formato simple para WhatsApp: *negrita* solo para títulos clave. Máximo 300 palabras. No uses markdown complejo, solo asteriscos para negrita. Si faltan datos importantes, indicá cuáles necesitás.` },
+    { role: "user", content: texto }
+  ]);
 
   await enviarMensaje(from, respuesta);
 }
@@ -151,30 +139,21 @@ async function manejarImagen(from, imageId, caption) {
   }
 }
 
-// ─── Claude (texto) ─────────────────────────────────────────────────────────
-async function llamarClaude(messages, systemPrompt) {
-  console.log("🤖 Llamando a Claude...");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+// ─── OpenAI (texto) ──────────────────────────────────────────────────────────
+async function llamarOpenAI(messages) {
+  console.log("🤖 Llamando a OpenAI...");
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 600,
-      system: systemPrompt,
-      messages
-    })
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 600, messages })
   });
   const data = await res.json();
   if (data.error) {
-    console.error("Error Claude:", data.error);
+    console.error("Error OpenAI:", data.error);
     return "No pude generar una respuesta en este momento.";
   }
-  console.log("✅ Claude respondió OK");
-  return data.content?.[0]?.text || "No pude generar una respuesta.";
+  console.log("✅ OpenAI respondió OK");
+  return data.choices?.[0]?.message?.content || "No pude generar una respuesta.";
 }
 
 // ─── OpenAI Vision (imágenes) ───────────────────────────────────────────────
@@ -271,7 +250,6 @@ app.get("/", (req, res) => {
     status: "online",
     phone_number_id: PHONE_NUMBER_ID || "⚠️ NO CONFIGURADO",
     wa_token: WA_TOKEN ? "✅ configurado" : "⚠️ NO CONFIGURADO",
-    anthropic: ANTHROPIC_KEY ? "✅ configurado" : "⚠️ NO CONFIGURADO",
     openai: OPENAI_API_KEY ? "✅ configurado" : "⚠️ NO CONFIGURADO",
   });
 });
