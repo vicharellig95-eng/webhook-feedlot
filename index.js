@@ -6,7 +6,7 @@ app.use(express.json());
 const VERIFY_TOKEN    = process.env.VERIFY_TOKEN    || "feedlot2024";
 const WA_TOKEN        = process.env.WA_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 const WA_VERSION      = "v19.0";
 
 // ─── Números autorizados ────────────────────────────────────────────────────
